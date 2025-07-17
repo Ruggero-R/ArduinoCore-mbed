@@ -1,0 +1,42 @@
+name: Hardware CI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  hardware-tests:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout Test-O-Matic-hardwareCI repository
+      uses: actions/checkout@v4
+      with:
+        repository: bcmi-labs/Test-O-Matic-hardwareCI
+        path: test-o-matic
+        
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Install dependencies
+      run: |
+        cd test-o-matic/unit-tests
+        go mod download
+        
+    - name: Run hardware tests
+      run: |
+        cd test-o-matic/unit-tests
+        go run main.go -test serialMS -test i2c -test can
+        
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: hardware-test-results
+        path: test-o-matic/unit-tests/test_results_*.json
+        retention-days: 7
