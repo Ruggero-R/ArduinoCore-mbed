@@ -25,24 +25,24 @@ jobs:
     steps:
     - name: Clone Test-O-Matic-hardwareCI repository
       run: |
-        $repo_url = "${{ github.event.inputs.repository_url }}"
-        if ([string]::IsNullOrEmpty($repo_url)) {
-          $repo_url = "https://github.com/bcmi-labs/Test-O-Matic-hardwareCI.git"
-        }
-        Write-Host "Repository URL: $repo_url"
+        repo_url="${{ github.event.inputs.repository_url }}"
+        if [ -z "$repo_url" ]; then
+          repo_url="https://github.com/bcmi-labs/Test-O-Matic-hardwareCI.git"
+        fi
+        echo "Repository URL: $repo_url"
         
         # Remove existing directory if it exists
-        if (Test-Path "test-o-matic") {
-          Write-Host "Removing existing test-o-matic directory..."
-          Remove-Item -Path "test-o-matic" -Recurse -Force
-        }
+        if [ -d "test-o-matic" ]; then
+          echo "Removing existing test-o-matic directory..."
+          rm -rf test-o-matic
+        fi
         
-        Write-Host "Cloning repository: $repo_url"
-        git clone $repo_url test-o-matic
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "::error::Failed to clone repository. Please check if the repository exists and is accessible."
+        echo "Cloning repository: $repo_url"
+        git clone "$repo_url" test-o-matic
+        if [ $? -ne 0 ]; then
+          echo "::error::Failed to clone repository. Please check if the repository exists and is accessible."
           exit 1
-        }
+        fi
         
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -51,24 +51,26 @@ jobs:
         
     - name: Install dependencies
       run: |
-        Set-Location "test-o-matic/unit-tests"
-        & go mod download
+        cd test-o-matic/unit-tests
+        go mod download
         
     - name: Run hardware tests
       run: |
-        Set-Location "test-o-matic/unit-tests"
-        $test_params = "${{ github.event.inputs.test_parameters }}"
-        if ([string]::IsNullOrEmpty($test_params)) {
-          $test_params = "serialMS i2c can"
-        }
-        Write-Host "Running tests with parameters: $test_params"
-        $params_array = $test_params -split '\s+'
-        $go_args = @("run", "main.go")
-        foreach ($param in $params_array) {
-          $go_args += "-test"
-          $go_args += $param
-        }
-        & go @go_args
+        cd test-o-matic/unit-tests
+        test_params="${{ github.event.inputs.test_parameters }}"
+        if [ -z "$test_params" ]; then
+          test_params="serialMS i2c can"
+        fi
+        echo "Running tests with parameters: $test_params"
+        
+        # Build the go command with test parameters
+        go_cmd="go run main.go"
+        for param in $test_params; do
+          go_cmd="$go_cmd -test $param"
+        done
+        
+        echo "Executing: $go_cmd"
+        eval $go_cmd
         
     - name: Upload test results
       if: always()
