@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      repository_url:
+        description: 'Repository URL for Test-O-Matic-hardwareCI'
+        required: false
+        default: 'https://github.com/bcmi-labs/Test-O-Matic-hardwareCI.git'
+        type: string
+      test_parameters:
+        description: 'Test parameters to run (e.g., serialMS, i2c, can)'
+        required: false
+        default: 'serialMS i2c can'
+        type: string
 
 jobs:
   hardware-tests:
@@ -40,12 +51,12 @@ jobs:
         
     - name: Install dependencies
       run: |
-        cd test-o-matic/unit-tests
-        go mod download
+        Set-Location "test-o-matic/unit-tests"
+        & go mod download
         
     - name: Run hardware tests
       run: |
-        cd test-o-matic/unit-tests
+        Set-Location "test-o-matic/unit-tests"
         $test_params = "${{ github.event.inputs.test_parameters }}"
         if ([string]::IsNullOrEmpty($test_params)) {
           $test_params = "serialMS i2c can"
