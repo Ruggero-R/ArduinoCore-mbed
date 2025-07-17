@@ -38,9 +38,17 @@ jobs:
         fi
         
         echo "Cloning repository: $repo_url"
-        git clone "$repo_url" test-o-matic
+        # Use GitHub token for authentication if available
+        if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+          # Extract repo path from URL
+          repo_path=$(echo "$repo_url" | sed 's|https://github.com/||')
+          git clone "https://${{ secrets.GITHUB_TOKEN }}@github.com/$repo_path" test-o-matic
+        else
+          git clone "$repo_url" test-o-matic
+        fi
+        
         if [ $? -ne 0 ]; then
-          echo "::error::Failed to clone repository. Please check if the repository exists and is accessible."
+          echo "::error::Failed to clone repository. Please check if the repository exists and is accessible, or add a GitHub token to secrets."
           exit 1
         fi
         
