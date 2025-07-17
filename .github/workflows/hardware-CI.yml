@@ -15,7 +15,7 @@ jobs:
     - name: Clone Test-O-Matic-hardwareCI repository
       run: |
         $repo_url = "${{ github.event.inputs.repository_url }}"
-        if ([string]::IsNullOrEmpty($repo_url) {
+        if ([string]::IsNullOrEmpty($repo_url)) {
           $repo_url = "https://github.com/bcmi-labs/Test-O-Matic-hardwareCI.git"
         }
         Write-Host "Repository URL: $repo_url"
