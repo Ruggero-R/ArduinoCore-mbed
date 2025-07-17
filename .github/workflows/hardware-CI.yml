@@ -12,11 +12,26 @@ jobs:
     runs-on: self-hosted
     
     steps:
-    - name: Checkout Test-O-Matic-hardwareCI repository
-      uses: actions/checkout@v4
-      with:
-        repository: bcmi-labs/Test-O-Matic-hardwareCI
-        path: test-o-matic
+    - name: Clone Test-O-Matic-hardwareCI repository
+      run: |
+        $repo_url = "${{ github.event.inputs.repository_url }}"
+        if ([string]::IsNullOrEmpty($repo_url) {
+          $repo_url = "https://github.com/bcmi-labs/Test-O-Matic-hardwareCI.git"
+        }
+        Write-Host "Repository URL: $repo_url"
+        
+        # Remove existing directory if it exists
+        if (Test-Path "test-o-matic") {
+          Write-Host "Removing existing test-o-matic directory..."
+          Remove-Item -Path "test-o-matic" -Recurse -Force
+        }
+        
+        Write-Host "Cloning repository: $repo_url"
+        git clone $repo_url test-o-matic
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "::error::Failed to clone repository. Please check if the repository exists and is accessible."
+          exit 1
+        }
         
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -31,7 +46,18 @@ jobs:
     - name: Run hardware tests
       run: |
         cd test-o-matic/unit-tests
-        go run main.go -test serialMS -test i2c -test can
+        $test_params = "${{ github.event.inputs.test_parameters }}"
+        if ([string]::IsNullOrEmpty($test_params)) {
+          $test_params = "serialMS i2c can"
+        }
+        Write-Host "Running tests with parameters: $test_params"
+        $params_array = $test_params -split '\s+'
+        $go_args = @("run", "main.go")
+        foreach ($param in $params_array) {
+          $go_args += "-test"
+          $go_args += $param
+        }
+        & go @go_args
         
     - name: Upload test results
       if: always()
