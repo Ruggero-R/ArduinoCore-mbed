@@ -1,5 +1,6 @@
 name: Hardware CI Tests
 
+# Updated to use PAT authentication only
 on:
   push:
     branches: [ main, master ]
@@ -10,7 +11,7 @@ on:
       repository_url:
         description: 'Repository URL for Test-O-Matic-hardwareCI'
         required: false
-        default: 'git@github.com:Ruggero-R/Test-O-Matic-hardwareCI-R.git'
+        default: 'https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git'
         type: string
       test_parameters:
         description: 'Test parameters to run (e.g., serialMS, i2c, can)'
@@ -26,11 +27,6 @@ jobs:
     - name: Checkout current repository
       uses: actions/checkout@v4
       
-    - name: Setup SSH key
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-      
     - name: Clone Test-O-Matic-hardwareCI repository
       uses: actions/checkout@v4
       with:
@@ -45,7 +41,7 @@ jobs:
         # Cross-platform repository cloning with authentication fallback
         repo_url="${{ github.event.inputs.repository_url }}"
         if [ -z "$repo_url" ]; then
-          repo_url="git@github.com:Ruggero-R/Test-O-Matic-hardwareCI-R.git"
+          repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
         fi
         echo "Repository URL: $repo_url"
         
@@ -58,16 +54,7 @@ jobs:
         # Try different authentication methods
         clone_success=false
         
-        # Method 1: Try SSH clone (if URL is SSH format)
-        if [[ "$repo_url" == git@* ]] && [ "$clone_success" = false ]; then
-          echo "Attempting SSH clone..."
-          if git clone "$repo_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "SSH clone successful"
-          fi
-        fi
-        
-        # Method 2: Use personal access token (for HTTPS URLs)
+        # Method 1: Use personal access token (primary method for HTTPS URLs)
         if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.PAT_TOKEN }}" ] && [ "$clone_success" = false ]; then
           echo "Attempting clone with Personal Access Token..."
           auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.PAT_TOKEN }}@github.com/|")
@@ -76,8 +63,8 @@ jobs:
             echo "Clone successful with PAT token"
           fi
         fi
-        
-        # Method 3: Use GitHub token as fallback (for HTTPS URLs)
+      
+        # Method 2: Use GitHub token as fallback (for HTTPS URLs)
         if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.GITHUB_TOKEN }}" ] && [ "$clone_success" = false ]; then
           echo "Attempting clone with GitHub token..."
           auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.GITHUB_TOKEN }}@github.com/|")
@@ -86,8 +73,8 @@ jobs:
             echo "Clone successful with GitHub token"
           fi
         fi
-        
-        # Method 4: Try without authentication (for public repos with HTTPS)
+
+        # Method 3: Try without authentication (for public repos with HTTPS)
         if [[ "$repo_url" == https* ]] && [ "$clone_success" = false ]; then
           echo "Attempting clone without authentication (public repo)..."
           export GIT_TERMINAL_PROMPT=0
