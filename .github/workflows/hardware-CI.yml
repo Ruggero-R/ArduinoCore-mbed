@@ -10,7 +10,7 @@ on:
       repository_url:
         description: 'Repository URL for Test-O-Matic-hardwareCI'
         required: false
-        default: 'https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git'
+        default: 'git@github.com:Ruggero-R/Test-O-Matic-hardwareCI-R.git'
         type: string
       test_parameters:
         description: 'Test parameters to run (e.g., serialMS, i2c, can)'
@@ -23,69 +23,88 @@ jobs:
     runs-on: self-hosted
     
     steps:
+    - name: Checkout current repository
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
     - name: Clone Test-O-Matic-hardwareCI repository
+      uses: actions/checkout@v4
+      with:
+        repository: Ruggero-R/Test-O-Matic-hardwareCI-R
+        path: test-o-matic
+        token: ${{ secrets.PAT_TOKEN }}
+      
+    # Fallback manual clone if checkout action fails  
+    - name: Manual clone if checkout failed
+      if: failure()
       run: |
-        # Cross-platform repository cloning with space handling
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          # Windows PowerShell commands
-          repo_url="${{ github.event.inputs.repository_url }}"
-          if [ -z "$repo_url" ]; then
-            repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
+        # Cross-platform repository cloning with authentication fallback
+        repo_url="${{ github.event.inputs.repository_url }}"
+        if [ -z "$repo_url" ]; then
+          repo_url="git@github.com:Ruggero-R/Test-O-Matic-hardwareCI-R.git"
+        fi
+        echo "Repository URL: $repo_url"
+        
+        # Remove existing directory if it exists
+        if [ -d "test-o-matic" ]; then
+          echo "Removing existing test-o-matic directory..."
+          rm -rf "test-o-matic"
+        fi
+        
+        # Try different authentication methods
+        clone_success=false
+        
+        # Method 1: Try SSH clone (if URL is SSH format)
+        if [[ "$repo_url" == git@* ]] && [ "$clone_success" = false ]; then
+          echo "Attempting SSH clone..."
+          if git clone "$repo_url" "test-o-matic" 2>/dev/null; then
+            clone_success=true
+            echo "SSH clone successful"
           fi
-          echo "Repository URL: $repo_url"
-          
-          # Remove existing directory if it exists (Windows)
-          if [ -d "test-o-matic" ]; then
-            echo "Removing existing test-o-matic directory..."
-            rm -rf "test-o-matic"
+        fi
+        
+        # Method 2: Use personal access token (for HTTPS URLs)
+        if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.PAT_TOKEN }}" ] && [ "$clone_success" = false ]; then
+          echo "Attempting clone with Personal Access Token..."
+          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.PAT_TOKEN }}@github.com/|")
+          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
+            clone_success=true
+            echo "Clone successful with PAT token"
           fi
-          
-          echo "Cloning repository: $repo_url"
-          git clone "$repo_url" "test-o-matic"
-          
-          if [ $? -ne 0 ]; then
-            echo "::error::Failed to clone repository."
-            exit 1
+        fi
+        
+        # Method 3: Use GitHub token as fallback (for HTTPS URLs)
+        if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.GITHUB_TOKEN }}" ] && [ "$clone_success" = false ]; then
+          echo "Attempting clone with GitHub token..."
+          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.GITHUB_TOKEN }}@github.com/|")
+          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
+            clone_success=true
+            echo "Clone successful with GitHub token"
           fi
-        else
-          # Unix/Linux/macOS commands
-          repo_url="${{ github.event.inputs.repository_url }}"
-          if [ -z "$repo_url" ]; then
-            repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
-          fi
-          echo "Repository URL: $repo_url"
-          
-          # Remove existing directory if it exists (Unix)
-          if [ -d "test-o-matic" ]; then
-            echo "Removing existing test-o-matic directory..."
-            rm -rf "test-o-matic"
-          fi
-          
-          echo "Cloning repository: $repo_url"
+        fi
+        
+        # Method 4: Try without authentication (for public repos with HTTPS)
+        if [[ "$repo_url" == https* ]] && [ "$clone_success" = false ]; then
+          echo "Attempting clone without authentication (public repo)..."
           export GIT_TERMINAL_PROMPT=0
-          
-          git clone "$repo_url" "test-o-matic" &
-          clone_pid=$!
-          
-          # Wait for clone to complete or timeout after 120 seconds
-          wait_time=0
-          while kill -0 $clone_pid 2>/dev/null; do
-            if [ $wait_time -ge 120 ]; then
-              echo "::error::Git clone operation timed out after 2 minutes."
-              kill $clone_pid 2>/dev/null
-              exit 1
-            fi
-            sleep 1
-            wait_time=$((wait_time + 1))
-          done
-          
-          wait $clone_pid
-          clone_exit_code=$?
-          
-          if [ $clone_exit_code -ne 0 ]; then
-            echo "::error::Failed to clone repository. Exit code: $clone_exit_code"
-            exit 1
+          if git clone "$repo_url" "test-o-matic" 2>/dev/null; then
+            clone_success=true
+            echo "Clone successful without authentication"
           fi
+        fi
+        
+        # Check if any method succeeded
+        if [ "$clone_success" = false ]; then
+          echo "::error::Failed to clone repository using all methods."
+          echo "::error::Solutions:"
+          echo "::error::1. Make the repository public, OR"
+          echo "::error::2. Add a PAT_TOKEN secret with repo access, OR" 
+          echo "::error::3. Ensure GITHUB_TOKEN has access to external repos"
+          exit 1
         fi
         
         echo "Repository cloned successfully!"
@@ -119,8 +138,16 @@ jobs:
         
     - name: Run hardware tests
       run: |
-        # Cross-platform test execution with space handling
+        # Cross-platform test execution with comprehensive error handling
         cd "test-o-matic/unit-tests"
+        
+        # Verify main.go exists
+        if [ ! -f "main.go" ]; then
+          echo "::error::main.go not found in $(pwd)"
+          echo "::error::Available files:"
+          ls -la
+          exit 1
+        fi
         
         test_params="${{ github.event.inputs.test_parameters }}"
         if [ -z "$test_params" ]; then
@@ -128,23 +155,54 @@ jobs:
         fi
         echo "Running tests with parameters: $test_params"
         
-        # Build the go command with test parameters (cross-platform)
+        # Build the go command with test parameters
         go_args="run main.go"
         for param in $test_params; do
           go_args="$go_args -test $param"
         done
         
         echo "Executing: go $go_args"
+        echo "Working directory: $(pwd)"
         
-        # Execute with proper error handling
-        set +e  # Don't exit immediately on error
-        go $go_args
-        exit_code=$?
+        # Execute with comprehensive error handling
+        set +e  # Don't exit immediately on error to capture exit code
+        go $go_args 2>&1 | tee test_output.log  # Capture both stdout and stderr
+        exit_code=${PIPESTATUS[0]}  # Get the exit code of the go command, not tee
         set -e  # Re-enable exit on error
         
-        # Check exit code
-        if [ $exit_code -ne 0 ]; then
-          echo "::error::Hardware tests failed with exit code: $exit_code"
+        echo "Go command finished with exit code: $exit_code"
+        
+        # Check for error keywords in the output (case-insensitive)
+        error_found=false
+        if [ -f "test_output.log" ]; then
+          if grep -iq -E "(error|fail|failed|failure)" test_output.log; then
+            error_found=true
+            echo "Error keywords detected in test output"
+          fi
+        fi
+        
+        # Check exit code and provide detailed error information
+        if [ $exit_code -ne 0 ] || [ "$error_found" = true ]; then
+          if [ $exit_code -ne 0 ]; then
+            echo "::error::Hardware tests failed with exit code: $exit_code"
+          fi
+          if [ "$error_found" = true ]; then
+            echo "::error::Hardware tests failed: Error keywords detected in output"
+          fi
+          
+          echo "::group::Test Output"
+          cat test_output.log 2>/dev/null || echo "No test output available"
+          echo "::endgroup::"
+          
+          if [ "$error_found" = true ]; then
+            echo "::group::Error Lines"
+            echo "Lines containing error keywords:"
+            grep -in -E "(error|fail|failed|failure)" test_output.log 2>/dev/null || echo "No specific error lines found"
+            echo "::endgroup::"
+          fi
+          
+          echo "::error::The Go program encountered an error during execution."
+          echo "::error::Please check the test output above for more details."
           exit 1
         fi
         
