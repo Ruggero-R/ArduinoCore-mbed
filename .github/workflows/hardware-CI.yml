@@ -1,6 +1,5 @@
 name: Hardware CI Tests
 
-# Updated to use PAT authentication only
 on:
   push:
     branches: [ main, master ]
@@ -28,74 +27,13 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Clone Test-O-Matic-hardwareCI repository
+      id: checkout-external
       uses: actions/checkout@v4
       with:
         repository: Ruggero-R/Test-O-Matic-hardwareCI-R
         path: test-o-matic
-        token: ${{ secrets.PAT_TOKEN }}
-      
-    # Fallback manual clone if checkout action fails  
-    - name: Manual clone if checkout failed
-      if: failure()
-      run: |
-        # Cross-platform repository cloning with authentication fallback
-        repo_url="${{ github.event.inputs.repository_url }}"
-        if [ -z "$repo_url" ]; then
-          repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
-        fi
-        echo "Repository URL: $repo_url"
-        
-        # Remove existing directory if it exists
-        if [ -d "test-o-matic" ]; then
-          echo "Removing existing test-o-matic directory..."
-          rm -rf "test-o-matic"
-        fi
-        
-        # Try different authentication methods
-        clone_success=false
-        
-        # Method 1: Use personal access token (primary method for HTTPS URLs)
-        if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.PAT_TOKEN }}" ] && [ "$clone_success" = false ]; then
-          echo "Attempting clone with Personal Access Token..."
-          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.PAT_TOKEN }}@github.com/|")
-          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "Clone successful with PAT token"
-          fi
-        fi
-      
-        # Method 2: Use GitHub token as fallback (for HTTPS URLs)
-        if [[ "$repo_url" == https* ]] && [ -n "${{ secrets.GITHUB_TOKEN }}" ] && [ "$clone_success" = false ]; then
-          echo "Attempting clone with GitHub token..."
-          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.GITHUB_TOKEN }}@github.com/|")
-          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "Clone successful with GitHub token"
-          fi
-        fi
-
-        # Method 3: Try without authentication (for public repos with HTTPS)
-        if [[ "$repo_url" == https* ]] && [ "$clone_success" = false ]; then
-          echo "Attempting clone without authentication (public repo)..."
-          export GIT_TERMINAL_PROMPT=0
-          if git clone "$repo_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "Clone successful without authentication"
-          fi
-        fi
-        
-        # Check if any method succeeded
-        if [ "$clone_success" = false ]; then
-          echo "::error::Failed to clone repository using all methods."
-          echo "::error::Solutions:"
-          echo "::error::1. Make the repository public, OR"
-          echo "::error::2. Add a PAT_TOKEN secret with repo access, OR" 
-          echo "::error::3. Ensure GITHUB_TOKEN has access to external repos"
-          exit 1
-        fi
-        
-        echo "Repository cloned successfully!"
-      shell: bash
+        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      continue-on-error: true
         
     - name: Set up Go
       run: |
