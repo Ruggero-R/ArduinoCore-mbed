@@ -31,6 +31,11 @@ jobs:
         echo "Testing repository accessibility..."
         repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
         
+        # Debug: Check what secrets are available (without revealing values)
+        echo "=== SECRET DEBUGGING ==="
+        echo "PAT_TOKEN length: ${#PAT_TOKEN}"
+        echo "GITHUB_TOKEN length: ${#GITHUB_TOKEN}"
+        
         # Test if repository exists and is accessible
         if curl -s -f -I "https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R" > /dev/null; then
           echo "✅ Repository is publicly accessible"
@@ -40,18 +45,27 @@ jobs:
         fi
         
         # Test with PAT if available
-        if [ -n "${{ secrets.PAT_TOKEN }}" ]; then
-          echo "PAT_TOKEN is available"
+        if [ -n "$PAT_TOKEN" ]; then
+          echo "✅ PAT_TOKEN is available (length: ${#PAT_TOKEN})"
           # Test API access with PAT
-          if curl -s -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+          if curl -s -H "Authorization: token $PAT_TOKEN" \
              "https://api.github.com/repos/Ruggero-R/Test-O-Matic-hardwareCI-R" > /dev/null; then
             echo "✅ PAT has access to repository"
           else
             echo "❌ PAT does not have access to repository"
           fi
         else
-          echo "❌ PAT_TOKEN is not configured"
+          echo "❌ PAT_TOKEN is not available in environment"
         fi
+        
+        if [ -n "$GITHUB_TOKEN" ]; then
+          echo "✅ GITHUB_TOKEN is available (length: ${#GITHUB_TOKEN})"
+        else
+          echo "❌ GITHUB_TOKEN is not available"
+        fi
+      env:
+        PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       shell: bash
       
     - name: Clone Test-O-Matic-hardwareCI repository
@@ -62,80 +76,6 @@ jobs:
         path: test-o-matic
         token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
       continue-on-error: true
-      
-    - name: Fallback manual clone if checkout failed
-      if: always()
-      run: |
-        # Check if checkout was successful
-        if [ -d "test-o-matic" ] && [ -f "test-o-matic/.git/config" ]; then
-          echo "✅ Checkout was successful, skipping manual clone"
-          exit 0
-        fi
-        
-        echo "❌ Checkout failed, attempting manual clone..."
-        
-        # Remove any partial clone
-        if [ -d "test-o-matic" ]; then
-          rm -rf "test-o-matic"
-        fi
-        
-        repo_url="${{ github.event.inputs.repository_url }}"
-        if [ -z "$repo_url" ]; then
-          repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
-        fi
-        echo "Repository URL: $repo_url"
-        
-        clone_success=false
-        
-        # Method 1: Use PAT token (if available)
-        if [ -n "${{ secrets.PAT_TOKEN }}" ] && [ "$clone_success" = false ]; then
-          echo "Attempting clone with Personal Access Token..."
-          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.PAT_TOKEN }}@github.com/|")
-          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "✅ Clone successful with PAT token"
-          else
-            echo "❌ Clone with PAT token failed"
-          fi
-        fi
-        
-        # Method 2: Use GitHub token (fallback)
-        if [ -n "${{ secrets.GITHUB_TOKEN }}" ] && [ "$clone_success" = false ]; then
-          echo "Attempting clone with GitHub token..."
-          auth_url=$(echo "$repo_url" | sed "s|https://github.com/|https://${{ secrets.GITHUB_TOKEN }}@github.com/|")
-          if git clone "$auth_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "✅ Clone successful with GitHub token"
-          else
-            echo "❌ Clone with GitHub token failed"
-          fi
-        fi
-        
-        # Method 3: Try without authentication (for public repos)
-        if [ "$clone_success" = false ]; then
-          echo "Attempting clone without authentication..."
-          export GIT_TERMINAL_PROMPT=0
-          if git clone "$repo_url" "test-o-matic" 2>/dev/null; then
-            clone_success=true
-            echo "✅ Clone successful without authentication"
-          else
-            echo "❌ Clone without authentication failed"
-          fi
-        fi
-        
-        # Final check
-        if [ "$clone_success" = false ]; then
-          echo "::error::❌ All clone methods failed!"
-          echo "::error::Possible issues:"
-          echo "::error::1. Repository doesn't exist: $repo_url"
-          echo "::error::2. Repository is private and PAT_TOKEN lacks permissions"
-          echo "::error::3. PAT_TOKEN is not configured properly"
-          echo "::error::4. Network connectivity issues"
-          exit 1
-        fi
-        
-        echo "✅ Repository cloned successfully!"
-      shell: bash
         
     - name: Set up Go
       run: |
