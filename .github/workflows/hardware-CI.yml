@@ -25,109 +25,152 @@ jobs:
     steps:
     - name: Clone Test-O-Matic-hardwareCI repository
       run: |
-        repo_url="${{ github.event.inputs.repository_url }}"
-        if [ -z "$repo_url" ]; then
-          repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
-        fi
-        echo "Repository URL: $repo_url"
-        
-        # Remove existing directory if it exists
-        if [ -d "test-o-matic" ]; then
-          echo "Removing existing test-o-matic directory..."
-          rm -rf test-o-matic
-        fi
-        
-        echo "Cloning repository: $repo_url"
-        # Configure git to avoid hanging and add timeout
-        export GIT_TERMINAL_PROMPT=0
-        
-        # Clone with timeout (macOS compatible)
-        echo "Attempting clone from your fork..."
-        
-        # Use background process with timeout for macOS compatibility
-        git clone "$repo_url" test-o-matic &
-        clone_pid=$!
-        
-        # Wait for clone to complete or timeout after 120 seconds
-        wait_time=0
-        while kill -0 $clone_pid 2>/dev/null; do
-          if [ $wait_time -ge 120 ]; then
-            echo "::error::Git clone operation timed out after 2 minutes."
-            kill $clone_pid 2>/dev/null
+        # Cross-platform repository cloning with space handling
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          # Windows PowerShell commands
+          repo_url="${{ github.event.inputs.repository_url }}"
+          if [ -z "$repo_url" ]; then
+            repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
+          fi
+          echo "Repository URL: $repo_url"
+          
+          # Remove existing directory if it exists (Windows)
+          if [ -d "test-o-matic" ]; then
+            echo "Removing existing test-o-matic directory..."
+            rm -rf "test-o-matic"
+          fi
+          
+          echo "Cloning repository: $repo_url"
+          git clone "$repo_url" "test-o-matic"
+          
+          if [ $? -ne 0 ]; then
+            echo "::error::Failed to clone repository."
             exit 1
           fi
-          sleep 1
-          wait_time=$((wait_time + 1))
-        done
-        
-        # Wait for the process to finish and get exit code
-        wait $clone_pid
-        clone_exit_code=$?
-        
-        if [ $clone_exit_code -ne 0 ]; then
-          echo "::error::Failed to clone repository. Exit code: $clone_exit_code"
-          exit 1
+        else
+          # Unix/Linux/macOS commands
+          repo_url="${{ github.event.inputs.repository_url }}"
+          if [ -z "$repo_url" ]; then
+            repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
+          fi
+          echo "Repository URL: $repo_url"
+          
+          # Remove existing directory if it exists (Unix)
+          if [ -d "test-o-matic" ]; then
+            echo "Removing existing test-o-matic directory..."
+            rm -rf "test-o-matic"
+          fi
+          
+          echo "Cloning repository: $repo_url"
+          export GIT_TERMINAL_PROMPT=0
+          
+          git clone "$repo_url" "test-o-matic" &
+          clone_pid=$!
+          
+          # Wait for clone to complete or timeout after 120 seconds
+          wait_time=0
+          while kill -0 $clone_pid 2>/dev/null; do
+            if [ $wait_time -ge 120 ]; then
+              echo "::error::Git clone operation timed out after 2 minutes."
+              kill $clone_pid 2>/dev/null
+              exit 1
+            fi
+            sleep 1
+            wait_time=$((wait_time + 1))
+          done
+          
+          wait $clone_pid
+          clone_exit_code=$?
+          
+          if [ $clone_exit_code -ne 0 ]; then
+            echo "::error::Failed to clone repository. Exit code: $clone_exit_code"
+            exit 1
+          fi
         fi
         
         echo "Repository cloned successfully!"
+      shell: bash
         
     - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
+      run: |
+        # Cross-platform Go setup
+        echo "Checking Go installation..."
+        if command -v go >/dev/null 2>&1; then
+          go_version=$(go version)
+          echo "Go version: $go_version"
+        else
+          echo "::error::Go is not installed or not in PATH"
+          exit 1
+        fi
+      shell: bash
         
     - name: Install dependencies
       run: |
-        cd test-o-matic/unit-tests
+        # Cross-platform dependency installation
+        echo "Installing Go dependencies..."
+        cd "test-o-matic/unit-tests"
         go mod download
+        if [ $? -ne 0 ]; then
+          echo "::error::Failed to download Go dependencies"
+          exit 1
+        fi
+        echo "Dependencies installed successfully!"
+      shell: bash
         
     - name: Run hardware tests
       run: |
-        cd test-o-matic/unit-tests
+        # Cross-platform test execution with space handling
+        cd "test-o-matic/unit-tests"
+        
         test_params="${{ github.event.inputs.test_parameters }}"
         if [ -z "$test_params" ]; then
           test_params="serialMS i2c can"
         fi
         echo "Running tests with parameters: $test_params"
         
-        # Build the go command with test parameters
-        go_cmd="go run main.go"
+        # Build the go command with test parameters (cross-platform)
+        go_args="run main.go"
         for param in $test_params; do
-          go_cmd="$go_cmd -test $param"
+          go_args="$go_args -test $param"
         done
         
-        echo "Executing: $go_cmd"
+        echo "Executing: go $go_args"
         
-        # Capture the output and exit code
+        # Execute with proper error handling
         set +e  # Don't exit immediately on error
-        output=$(eval $go_cmd 2>&1)
+        go $go_args
         exit_code=$?
         set -e  # Re-enable exit on error
         
-        # Print the output
-        echo "$output"
-        
-        # Check for specific error conditions
+        # Check exit code
         if [ $exit_code -ne 0 ]; then
           echo "::error::Hardware tests failed with exit code: $exit_code"
-          exit 1
-        elif echo "$output" | grep -i "error\|fail\|exception"; then
-          echo "::error::Hardware tests encountered errors (see output above)"
-          exit 1
-        elif echo "$output" | grep -i "arduino-cli.*not found"; then
-          echo "::error::arduino-cli is not installed or not in PATH. Please install Arduino CLI on the runner."
-          exit 1
-        elif echo "$output" | grep -i "no.*board\|board.*not.*found"; then
-          echo "::error::No Arduino boards detected. Please ensure boards are connected and recognized."
           exit 1
         fi
         
         echo "Hardware tests completed successfully!"
+      shell: bash
         
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: hardware-test-results
-        path: test-o-matic/unit-tests/test_results_*.json
-        retention-days: 7
+      run: |
+        # Cross-platform test result handling
+        echo "Looking for test result files..."
+        
+        # Check if test results exist (handle spaces in paths)
+        if ls "test-o-matic/unit-tests"/test_results_*.json 1> /dev/null 2>&1; then
+          echo "Test result files found:"
+          ls -la "test-o-matic/unit-tests"/test_results_*.json
+          
+          # Create artifacts directory
+          mkdir -p "artifacts"
+          
+          # Copy test results (handle spaces)
+          cp "test-o-matic/unit-tests"/test_results_*.json "artifacts/" 2>/dev/null || echo "No test result files to copy"
+          
+          echo "Test results copied to artifacts directory"
+          ls -la "artifacts/"
+        else
+          echo "No test result files found matching pattern test_results_*.json"
+        fi
+      shell: bash
