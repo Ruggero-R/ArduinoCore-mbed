@@ -31,41 +31,32 @@ jobs:
         echo "Testing repository accessibility..."
         repo_url="https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R.git"
         
-        # Debug: Check what secrets are available (without revealing values)
-        echo "=== SECRET DEBUGGING ==="
-        echo "PAT_TOKEN length: ${#PAT_TOKEN}"
-        echo "GITHUB_TOKEN length: ${#GITHUB_TOKEN}"
-        
+        # Check PAT_TOKEN availability
+        if [ -n "$PAT_TOKEN" ]; then
+          echo "PAT_TOKEN is available (length: ${#PAT_TOKEN})"
+        fi
+
         # Test if repository exists and is accessible
         if curl -s -f -I "https://github.com/Ruggero-R/Test-O-Matic-hardwareCI-R" > /dev/null; then
-          echo "✅ Repository is publicly accessible"
+          echo "Repository is publicly accessible"
         else
-          echo "⚠️  Repository may be private or doesn't exist"
+          echo "Repository may be private or doesn't exist"
           echo "Will attempt clone with authentication..."
         fi
         
-        # Test with PAT if available
+        # Test API access with PAT_TOKEN
         if [ -n "$PAT_TOKEN" ]; then
-          echo "✅ PAT_TOKEN is available (length: ${#PAT_TOKEN})"
-          # Test API access with PAT
+          echo "Testing API access with PAT_TOKEN..."
           if curl -s -H "Authorization: token $PAT_TOKEN" \
              "https://api.github.com/repos/Ruggero-R/Test-O-Matic-hardwareCI-R" > /dev/null; then
-            echo "✅ PAT has access to repository"
+            echo "PAT_TOKEN has access to repository"
           else
-            echo "❌ PAT does not have access to repository"
+            echo "PAT_TOKEN does not have access to repository"
+            echo "Please check that your PAT has 'repo' scope for private repositories"
           fi
-        else
-          echo "❌ PAT_TOKEN is not available in environment"
-        fi
-        
-        if [ -n "$GITHUB_TOKEN" ]; then
-          echo "✅ GITHUB_TOKEN is available (length: ${#GITHUB_TOKEN})"
-        else
-          echo "❌ GITHUB_TOKEN is not available"
         fi
       env:
         PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       shell: bash
       
     - name: Clone Test-O-Matic-hardwareCI repository
@@ -74,7 +65,7 @@ jobs:
       with:
         repository: Ruggero-R/Test-O-Matic-hardwareCI-R
         path: test-o-matic
-        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PAT_TOKEN }}
       continue-on-error: true
         
     - name: Set up Go
