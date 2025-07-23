@@ -170,23 +170,40 @@ jobs:
     - name: Upload test results
       if: always()
       run: |
-        # Cross-platform test result handling
+        # Cross-platform test result handling - only latest file
         echo "Looking for test result files..."
         
-        # Check if test results exist (handle spaces in paths)
+        # Check if test results exist and find the most recent one
         if ls "test-o-matic/unit-tests"/test_results_*.json 1> /dev/null 2>&1; then
           echo "Test result files found:"
           ls -la "test-o-matic/unit-tests"/test_results_*.json
           
+          # Find the most recent test result file
+          latest_file=$(ls -t "test-o-matic/unit-tests"/test_results_*.json | head -n 1)
+          echo "Latest test result file: $latest_file"
+          
           # Create artifacts directory
           mkdir -p "artifacts"
           
-          # Copy test results (handle spaces)
-          cp "test-o-matic/unit-tests"/test_results_*.json "artifacts/" 2>/dev/null || echo "No test result files to copy"
-          
-          echo "Test results copied to artifacts directory"
-          ls -la "artifacts/"
+          # Copy only the latest test result
+          if [ -f "$latest_file" ]; then
+            cp "$latest_file" "artifacts/" 
+            echo "Latest test result copied to artifacts directory"
+            echo "Uploaded file:"
+            ls -la "artifacts/"
+          else
+            echo "No latest test result file found"
+          fi
         else
           echo "No test result files found matching pattern test_results_*.json"
         fi
       shell: bash
+      
+    - name: Upload artifacts to GitHub
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: hardware-test-results-latest-${{ github.run_number }}
+        path: artifacts/
+        retention-days: 30
+        if-no-files-found: warn
